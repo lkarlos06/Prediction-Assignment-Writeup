@@ -1,4 +1,4 @@
-Prediction Assignment Writeup
+**Prediction Assignment Writeup**
 
 What you should submit?
 
