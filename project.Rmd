@@ -1,0 +1,192 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Luis Carlos Méndez"
+date: "10/17/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE,warning = FALSE,message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+The objective of this Coursera project is through Machine Learning (ML) to predict the behavior of 6 types of accelerometers which take into account the following variables: **belt, forearm, arm, and dumbell and apply**. For each accelerometer, 20 samples were taken, so through ML, it must be determined which one offers the best performance. For this study, different ML techniques were used with which it is intended to observe which of the algorithms offers a better result for the accelerometers. The results showed that the Random Forest algorithm offered a mean accuracy and was decided as the model to apply to predict our activity.
+
+## Exercise Procedure
+As a first step, we load the full R libraries for this project
+
+```{r warning = FALSE,message = FALSE} 
+library(gbm)
+library(lattice)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(rattle)
+library(randomForest)
+library(RColorBrewer)
+library(readr)
+```
+
+We store the data hosted on the Web with which the tests and training of the selected algorithms will be done.
+
+```{r}
+  url_train <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  url_quiz  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+  data_train <- read.csv(url(url_train), strip.white = TRUE, na.strings = c("NA",""))
+  data_quiz  <- read.csv(url(url_quiz),  strip.white = TRUE, na.strings = c("NA",""))
+```
+
+We check the dimension of the training and test data
+```{r}
+  dim(data_train)
+  dim(data_quiz)
+```
+
+From the data downloaded from the WEB, we establish a pair of partitions at $75%$ and $25%$
+
+```{r}
+  in_train  <- createDataPartition(data_train$classe, p=0.75, list=FALSE)
+  train_set <- data_train[ in_train, ]
+  test_set  <- data_train[-in_train, ]
+```
+We check the dimension of the partition data
+
+```{r}
+    dim(train_set)
+    dim(test_set)
+```
+
+The two datasets *train_set and test_set* have a large number of NA values as well as near-zero-variance (NZV) variables. Both will be removed together with their ID variables.
+
+```{r}
+  nzv_var <- nearZeroVar(train_set)
+  train_set <- train_set[ , -nzv_var]
+  test_set  <- test_set [ , -nzv_var]
+```
+
+We verify the dimension of the data with the processing carried out in the previous point
+
+```{r}
+  dim(train_set)
+  dim(test_set)
+```
+
+Remove variables that are mostly NA. A threshlod of 95 % is selected and verify the dimension.
+
+```{r}
+  na_var <- sapply(train_set, function(x) mean(is.na(x))) > 0.95
+  train_set <- train_set[ , na_var == FALSE]
+  test_set  <- test_set [ , na_var == FALSE]
+```
+
+```{r}
+  dim(train_set)
+  dim(test_set)
+```  
+
+Since columns 1 to 5 are identification variables only, they will be removed as well and check the dimension.
+
+```{r}
+  train_set <- train_set[ , -(1:5)]
+  test_set  <- test_set [ , -(1:5)]
+```
+
+```{r}
+  dim(train_set)
+  dim(test_set)
+```  
+With the processing carried out, a reduction from 160 to 54 variables has been achieved, with which it is possible to improve the processing time.
+
+## Correlation Analysis Procedure
+
+Correlation analysis between the variables before the modeling work itself is done. The “FPC” is used as the first principal component order.
+
+```{r}
+  corr_matrix <- cor(train_set[ , -54])
+  corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+
+The interpretation of the correlation plot is that if two variables have a very high correlation, they will be colored in a dark blue, which indicates a positive relationship between variables. On the other hand, if the variables are close to the dark red region, the correlation is negative. As can be seen, there are only a few strong correlations concerning all input variables. The main components of the analysis will not be performed in this analysis. Instead, a few different prediction models will be built for better accuracy.
+
+## Prediction Models
+
+In this part of the project, ML algorithms are used to derive conclusions from the data. For this case study, three techniques are used: Decision Tree, Generalized Boosted Model (GBM), and Random Forest Model. The algorithms and analyzes are listed below.
+
+#Decision Tree Model
+
+For the first algorithm, we perform an analysis under the decision tree approach. The code in R that performs the analysis is shown below
+
+```{r}
+  set.seed(2222)
+  fit_decision_tree <- rpart(classe ~ ., data = train_set, method="class")
+  fancyRpartPlot(fit_decision_tree)
+```
+
+Predictions of the decision tree model on test_set
+
+```{r}
+  predict_decision_tree <- predict(fit_decision_tree, newdata = test_set, type="class")
+  conf_matrix_decision_tree <- confusionMatrix(predict_decision_tree, factor(test_set$classe))
+  conf_matrix_decision_tree
+```
+
+The predictive accuracy of the decision tree model is relatively low at $75.2\%$.Plot the predictive accuracy of the decision tree model is shown below:
+
+```{r}
+  plot(conf_matrix_decision_tree$table, col = conf_matrix_decision_tree$byClass, 
+  main = paste("Decision Tree Model: Predictive Accuracy =",
+  round(conf_matrix_decision_tree$overall['Accuracy'], 4)))
+```
+
+## Generalized Boosted Model (GBM)
+```{r}
+  set.seed(2222)
+  ctrl_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+  fit_GBM  <- train(classe ~ ., data = train_set, method = "gbm",trControl = ctrl_GBM, verbose = FALSE)
+  fit_GBM$finalModel
+```
+Predictions of the GBM on test_set.
+
+```{r}
+  predict_GBM <- predict(fit_GBM, newdata = test_set)
+  conf_matrix_GBM <- confusionMatrix(predict_GBM, factor(test_set$classe))
+  conf_matrix_GBM
+```
+
+The results obtained showed that GBM has a $98.6\%$ accuracy, which means a high level.
+
+## Random Forest Model
+
+Finally, the code with which the Random Forest analysis is performed is presented. Therefore, based on the data presented at the beginning of this document, the results show the following
+
+```{r}
+  set.seed(2222)
+  ctrl_RF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+  fit_RF  <- train(classe ~ ., data = train_set, method = "rf", trControl = ctrl_RF, verbose = FALSE)
+  fit_RF$finalModel
+```
+
+Predictions of the random forest model on test_set.
+
+```{r}
+  predict_RF <- predict(fit_RF, newdata = test_set)
+  conf_matrix_RF <- confusionMatrix(predict_RF, factor(test_set$classe))
+  conf_matrix_RF
+```
+
+The predictive accuracy of the Random Forest model is $99.8\%$
+
+## Conclusion
+Based on the statistical evidence shown, the model with the highest accuracy is the Random Forest Model: $99.80\%$. The results above indicate that the Random Forest Model can be applied or make predictions on the 20 data points from the original testing dataset data_quiz. The following R code can achieve the model predictions.
+
+```{r}
+  predict_quiz <- as.data.frame(predict(fit_RF, newdata = data_quiz))
+  predict_quiz
+```  
+
+
